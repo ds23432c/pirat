@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ТО «ПИРАТЫ» — бронирование столов</title>
+  <link rel="icon" href="/img/logo.png" />
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="wrap">
+
+    <!-- Шапка -->
+    <header class="hero">
+      <img class="logo" src="/img/logo.png" alt="ТО Пираты" />
+      <p class="tagline">Мы плохому не научим!</p>
+    </header>
+
+    <div class="wheat-rule"><span>✦</span></div>
+
+    <!-- Информация о концерте -->
+    <section class="concert-card" id="concertCard">
+      <h1 id="cTitle">Концерт ТО «ПИРАТЫ»</h1>
+      <div class="concert-meta">
+        <span class="chip" id="cDate">Дата уточняется</span>
+        <span class="chip" id="cPlace">г. Курск</span>
+      </div>
+      <p class="concert-desc" id="cDesc"></p>
+    </section>
+
+    <!-- План зала -->
+    <h2 class="section-title">Схема зала</h2>
+    <p class="section-sub">Нажмите на свободный стол, чтобы забронировать место</p>
+
+    <div class="legend">
+      <span><i class="lg-free"></i>Свободен</span>
+      <span><i class="lg-pending"></i>Бронь на подтверждении</span>
+      <span><i class="lg-confirmed"></i>Забронирован</span>
+    </div>
+
+    <div class="hall-frame">
+      <div class="hall" id="hall">
+        <!-- стены зала -->
+        <svg class="hall-walls" viewBox="0 0 684 801" preserveAspectRatio="none">
+          <path d="M8,8 L440,8 L440,242 L672,242 L672,795"
+                fill="none" stroke="#3A2616" stroke-width="3" />
+          <path d="M8,8 L8,318" fill="none" stroke="#3A2616" stroke-width="3" />
+        </svg>
+
+        <!-- Декор: сцена, бар, WC, калона (положение по схеме) -->
+        <div class="decor stage"  style="left:51%;  top:8.4%;  width:25%;   height:12%;">сцена</div>
+        <div class="decor wc"     style="left:73.8%;top:27.6%; width:7.3%;  height:5.2%;">WC</div>
+        <div class="decor wc"     style="left:82.6%;top:27.6%; width:7.3%;  height:5.2%;">WC</div>
+        <div class="decor bar"    style="left:87.4%;top:67%;   width:20.5%; height:63%;">БАР</div>
+        <div class="decor column" style="left:34.8%;top:29.3%; width:8.8%;  height:8.7%;">калона</div>
+
+        <!-- Столы добавляются скриптом -->
+      </div>
+    </div>
+
+    <footer class="site">
+      <p>ТО «Пираты» · с 6 февраля 2019 · <a href="/admin.html">Вход для администратора</a></p>
+    </footer>
+  </div>
+
+  <!-- Модальное окно брони -->
+  <div class="modal-backdrop" id="modal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+      <h3 id="mTitle">Бронирование стола</h3>
+      <p class="sub">Заполните данные — администратор подтвердит бронь.</p>
+
+      <div class="table-info" id="mTableInfo">Стол</div>
+
+      <label class="field">
+        <span>Имя</span>
+        <input type="text" id="fName" autocomplete="given-name" placeholder="Например, Иван" />
+        <small class="hint">Как к вам обращаться</small>
+      </label>
+      <label class="field">
+        <span>Фамилия</span>
+        <input type="text" id="fLast" autocomplete="family-name" placeholder="Например, Петров" />
+        <small class="hint">На случай, если за столом несколько гостей</small>
+      </label>
+      <label class="field">
+        <span>Телефон</span>
+        <input type="tel" id="fPhone" inputmode="tel" placeholder="+7 (___) ___-__-__" />
+        <small class="hint">Укажите действующий номер — администратор позвонит или напишет, чтобы подтвердить бронь</small>
+      </label>
+      <label class="field">
+        <span>Примечание <em class="opt">(необязательно)</em></span>
+        <textarea id="fNote" rows="2" maxlength="500" placeholder="Например: день рождения, нужен детский стульчик, особые пожелания…"></textarea>
+        <small class="hint">Любые пожелания для администратора</small>
+      </label>
+
+      <div class="form-msg" id="formMsg"></div>
+
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="btnCancel">Отмена</button>
+        <button class="btn btn-primary" id="btnSubmit">Забронировать</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="/js/main.js"></script>
+</body>
+</html>

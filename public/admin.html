@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Админка — ТО «ПИРАТЫ»</title>
+  <link rel="icon" href="/img/logo.png" />
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="wrap">
+
+    <!-- Экран входа -->
+    <section id="loginScreen" class="login-box">
+      <div class="card">
+        <h1 style="margin-top:0;">Вход администратора</h1>
+        <p class="muted">Управление концертом, столами и бронями.</p>
+        <label class="field">
+          <span>Пароль</span>
+          <input type="password" id="adminPass" placeholder="Введите пароль" />
+        </label>
+        <div class="form-msg err" id="loginMsg"></div>
+        <button class="btn btn-primary" id="btnLogin" style="width:100%;">Войти</button>
+        <p class="muted" style="text-align:center;margin-top:14px;">
+          <a href="/">← на сайт бронирования</a>
+        </p>
+      </div>
+    </section>
+
+    <!-- Рабочая область -->
+    <section id="adminApp" style="display:none;">
+      <div class="admin-top">
+        <h1>Панель ТО «ПИРАТЫ»</h1>
+        <div>
+          <a href="/" class="btn btn-ghost btn-sm" target="_blank">Открыть сайт</a>
+          <button class="btn btn-ghost btn-sm" id="btnLogout">Выйти</button>
+        </div>
+      </div>
+
+      <div class="tabs">
+        <button class="tab active" data-tab="bookings">Заявки</button>
+        <button class="tab" data-tab="concert">Концерт</button>
+        <button class="tab" data-tab="tables">Столы и схема</button>
+      </div>
+
+      <!-- ЗАЯВКИ -->
+      <div class="panel active" id="panel-bookings">
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+            <h2 style="margin:0;">Заявки на бронь</h2>
+            <select id="bookingFilter" style="padding:8px;border-radius:8px;border:1.5px solid var(--line);">
+              <option value="all">Все</option>
+              <option value="pending">На подтверждении</option>
+              <option value="confirmed">Подтверждённые</option>
+              <option value="cancelled">Отменённые</option>
+            </select>
+          </div>
+          <div style="overflow-x:auto;margin-top:12px;">
+            <table class="grid" id="bookingsTable">
+              <thead>
+                <tr>
+                  <th>Дата</th><th>Гость</th><th>Телефон</th>
+                  <th>Стол</th><th>Статус</th><th>Действия</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- КОНЦЕРТ -->
+      <div class="panel" id="panel-concert">
+        <div class="card">
+          <h2 style="margin-top:0;">Информация о концерте</h2>
+          <div class="form-grid">
+            <label class="full">Название
+              <input type="text" id="eTitle" />
+            </label>
+            <label>Дата / время
+              <input type="text" id="eDate" placeholder="15 марта 2026, 19:00" />
+            </label>
+            <label>Место
+              <input type="text" id="ePlace" placeholder="г. Курск, ..." />
+            </label>
+            <label class="full">Описание
+              <textarea id="eDesc"></textarea>
+            </label>
+          </div>
+          <div class="form-msg ok" id="concertMsg"></div>
+          <button class="btn btn-primary" id="btnSaveConcert">Сохранить</button>
+        </div>
+      </div>
+
+      <!-- СТОЛЫ -->
+      <div class="panel" id="panel-tables">
+        <div class="card">
+          <h2 style="margin-top:0;">Редактор схемы зала</h2>
+          <p class="muted">Перетаскивайте столы мышью, чтобы изменить их расположение. Нажмите на стол, чтобы изменить вместимость, цену и форму.</p>
+          <div class="hall-frame editor-hall">
+            <div class="hall" id="editorHall">
+              <svg class="hall-walls" viewBox="0 0 684 801" preserveAspectRatio="none">
+                <path d="M8,8 L440,8 L440,242 L672,242 L672,795" fill="none" stroke="#3A2616" stroke-width="3" />
+                <path d="M8,8 L8,318" fill="none" stroke="#3A2616" stroke-width="3" />
+              </svg>
+              <div class="decor stage"  style="left:51%;top:8.4%;width:25%;height:12%;">сцена</div>
+              <div class="decor wc"     style="left:73.8%;top:27.6%;width:7.3%;height:5.2%;">WC</div>
+              <div class="decor wc"     style="left:82.6%;top:27.6%;width:7.3%;height:5.2%;">WC</div>
+              <div class="decor bar"    style="left:87.4%;top:67%;width:20.5%;height:63%;">БАР</div>
+              <div class="decor column" style="left:34.8%;top:29.3%;width:8.8%;height:8.7%;">калона</div>
+            </div>
+          </div>
+          <div class="form-msg ok" id="posMsg"></div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <button class="btn btn-primary" id="btnSavePositions">Сохранить расположение</button>
+            <button class="btn btn-ghost" id="btnAddTable">+ Добавить стол</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2 style="margin-top:0;">Все столы</h2>
+          <div style="overflow-x:auto;">
+            <table class="grid" id="tablesTable">
+              <thead>
+                <tr><th>Название</th><th>Мест</th><th>Цена</th><th>Форма</th><th>Активен</th><th></th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Модалка редактирования стола -->
+  <div class="modal-backdrop" id="tableModal">
+    <div class="modal">
+      <h3 id="tmTitle">Редактирование стола</h3>
+      <div class="form-grid">
+        <label class="full">Название
+          <input type="text" id="tmLabel" />
+        </label>
+        <label>Мест
+          <input type="number" id="tmSeats" min="1" max="20" />
+        </label>
+        <label>Цена, ₽
+          <input type="number" id="tmPrice" min="0" step="50" />
+        </label>
+        <label>Форма
+          <select id="tmShape">
+            <option value="circle">Круглый</option>
+            <option value="square">Квадратный</option>
+          </select>
+        </label>
+        <label>Размер, %
+          <input type="number" id="tmSize" min="6" max="25" step="0.5" />
+        </label>
+        <label class="full" style="display:flex;align-items:center;gap:8px;">
+          <input type="checkbox" id="tmActive" style="width:auto;" /> Активен (показывать на сайте)
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-warn btn-sm" id="tmDelete" style="flex:0 0 auto;">Удалить</button>
+        <button class="btn btn-ghost" id="tmCancel">Отмена</button>
+        <button class="btn btn-primary" id="tmSave">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <script src="/js/admin.js"></script>
+</body>
+</html>
