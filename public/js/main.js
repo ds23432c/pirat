@@ -95,20 +95,30 @@ modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); }
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
 
 // ---------- Маска и проверка телефона +7 ----------
+// Разделители ") " и "-" дописываются только когда за ними реально есть
+// цифры. Иначе при удалении они тут же добавлялись обратно и «блокировали»
+// стирание у чёрточек.
 fPhone.addEventListener('input', () => {
   let digits = fPhone.value.replace(/\D/g, '');
-  if (digits.startsWith('8')) digits = '7' + digits.slice(1);
-  if (!digits.startsWith('7')) digits = '7' + digits;
-  digits = digits.slice(0, 11); // 7 + 10 цифр
+  if (digits) {
+    if (digits[0] === '8') digits = '7' + digits.slice(1);
+    if (digits[0] !== '7') digits = '7' + digits;
+    digits = digits.slice(0, 11); // 7 + 10 цифр
+  }
 
-  let out = '+7';
-  const rest = digits.slice(1);
-  if (rest.length > 0) out += ' (' + rest.slice(0, 3);
-  if (rest.length >= 3) out += ') ' + rest.slice(3, 6);
-  if (rest.length >= 6) out += '-' + rest.slice(6, 8);
-  if (rest.length >= 8) out += '-' + rest.slice(8, 10);
+  let out = '';
+  if (digits) {
+    const r = digits.slice(1); // до 10 цифр номера
+    out = '+7';
+    if (r.length >= 1) out += ' (' + r.slice(0, 3);
+    if (r.length >= 4) out += ') ' + r.slice(3, 6);
+    if (r.length >= 7) out += '-' + r.slice(6, 8);
+    if (r.length >= 9) out += '-' + r.slice(8, 10);
+  }
+
   fPhone.value = out;
-  fPhone.classList.toggle('invalid', rest.length > 0 && rest.length < 10);
+  const r = digits.slice(1);
+  fPhone.classList.toggle('invalid', r.length > 0 && r.length < 10);
 });
 
 function getPhoneDigits() {
