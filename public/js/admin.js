@@ -105,11 +105,18 @@ function renderBookings(list) {
     const tr = document.createElement('tr');
     const d = new Date(b.created_at);
     const date = isNaN(d) ? '' : d.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const seats = b.seats || [];
+    let seatsText = '—';
+    if (seats.length) {
+      const label = seats[0].label;
+      const nums = seats.map((s) => s.seat_index + 1).sort((a, c) => a - c).join(', ');
+      seatsText = `${esc(label)}: ${seats.length === 1 ? 'место' : 'места'} ${nums}`;
+    }
     tr.innerHTML = `
       <td>${date}</td>
       <td>${esc(b.last_name)} ${esc(b.first_name)}${b.note ? `<div class="note-line">📝 ${esc(b.note)}</div>` : ''}</td>
       <td><a href="tel:${esc(b.phone)}">${esc(b.phone)}</a></td>
-      <td>${esc(b.label)} <span class="muted">(${b.seats}ч/${b.price}₽)</span></td>
+      <td>${seatsText}<div class="muted">${seats.length} × место = <b>${b.total_price} ₽</b></div></td>
       <td><span class="badge ${b.status}">${statusLabel[b.status]}</span></td>
       <td class="row-actions"></td>
     `;
@@ -193,7 +200,7 @@ function renderTablesGrid() {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${esc(t.label)}</td>
-      <td>${t.seats}</td>
+      <td>${t.seats_total}</td>
       <td>${t.price} ₽</td>
       <td>${t.shape === 'square' ? 'квадрат' : 'круг'}</td>
       <td>${t.is_active ? '✓' : '—'}</td>
@@ -210,14 +217,15 @@ function renderEditorHall() {
   editorHall.querySelectorAll('.table').forEach((el) => el.remove());
   for (const t of tablesData) {
     const el = document.createElement('div');
-    el.className = `table ${t.shape}` + (t.is_active ? '' : ' ');
+    const occ = (t.free_count > 0 || !t.is_active) ? 'has-free' : 'full';
+    el.className = `table ${t.shape} ${occ}`;
     el.style.left = t.x + '%';
     el.style.top = t.y + '%';
     el.style.width = t.size + '%';
     el.style.aspectRatio = '1 / 1';
     el.style.opacity = t.is_active ? '1' : '0.4';
     el.dataset.id = t.id;
-    el.innerHTML = `<span class="t-seats">${t.seats}ч</span><span class="t-price">${t.price}₽</span><span class="t-label">${esc(t.label)}</span>`;
+    el.innerHTML = `<span class="t-free">${esc(t.label)}</span><span class="t-count">${t.free_count}/${t.seats_total}</span><span class="t-price">${t.price}₽</span>`;
     makeDraggable(el, t);
     editorHall.appendChild(el);
   }
@@ -294,7 +302,7 @@ const tableModal = $('tableModal');
 function openTableModal(t) {
   editingTableId = t.id;
   $('tmLabel').value = t.label;
-  $('tmSeats').value = t.seats;
+  $('tmSeats').value = t.seats_total;
   $('tmPrice').value = t.price;
   $('tmShape').value = t.shape;
   $('tmSize').value = t.size;

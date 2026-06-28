@@ -30,12 +30,12 @@
 
     <!-- План зала -->
     <h2 class="section-title">Схема зала</h2>
-    <p class="section-sub">Нажмите на свободный стол, чтобы забронировать место</p>
+    <p class="section-sub">Нажмите на стол, чтобы выбрать и забронировать места</p>
 
     <div class="legend">
-      <span><i class="lg-free"></i>Свободен</span>
-      <span><i class="lg-pending"></i>Бронь на подтверждении</span>
-      <span><i class="lg-confirmed"></i>Забронирован</span>
+      <span><i class="lg-free"></i>Есть свободные места</span>
+      <span><i class="lg-pending"></i>Место на брони</span>
+      <span><i class="lg-confirmed"></i>Место занято</span>
     </div>
 
     <div class="hall-frame">
@@ -46,7 +46,7 @@
                 fill="none" stroke="#3A2616" stroke-width="3" stroke-linejoin="round" />
         </svg>
 
-        <!-- Декор: сцена, бар, WC, калона (положение по схеме) -->
+        <!-- Декор: сцена, бар, WC, колонна (положение по схеме) -->
         <div class="decor stage"  style="left:51%;  top:8.4%;  width:25%;   height:12%;">сцена</div>
         <div class="decor wc"     style="left:73.8%;top:27.6%; width:7.3%;  height:5.2%;">WC</div>
         <div class="decor wc"     style="left:82.6%;top:27.6%; width:7.3%;  height:5.2%;">WC</div>
@@ -65,10 +65,23 @@
   <!-- Модальное окно брони -->
   <div class="modal-backdrop" id="modal">
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mTitle">
-      <h3 id="mTitle">Бронирование стола</h3>
-      <p class="sub">Заполните данные — администратор подтвердит бронь.</p>
+      <h3 id="mTitle">Выбор мест</h3>
+      <p class="sub">Нажмите на свободные места. Серые и красные уже заняты.</p>
 
       <div class="table-info" id="mTableInfo">Стол</div>
+
+      <div class="seatmap" id="seatMap"></div>
+
+      <div class="seat-legend">
+        <span><i class="sl-free"></i>свободно</span>
+        <span><i class="sl-picked"></i>выбрано</span>
+        <span><i class="sl-pending"></i>бронь</span>
+        <span><i class="sl-confirmed"></i>занято</span>
+      </div>
+
+      <div class="seat-summary" id="seatSummary">
+        Выбрано мест: <b id="sumCount">0</b> · Итого: <b id="sumTotal">0 ₽</b>
+      </div>
 
       <label class="field">
         <span>Имя</span>

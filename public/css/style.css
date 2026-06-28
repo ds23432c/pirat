@@ -203,32 +203,38 @@ a { color: var(--gold-deep); }
   transition: transform .12s ease, box-shadow .12s ease, background .15s ease;
   line-height: 1.05;
   user-select: none;
+  z-index: 2;
 }
 .table.circle { border-radius: 50%; }
 .table.square { border-radius: 8px; }
-.table .t-seats { font-size: clamp(9px, 1.5vw, 12px); font-weight: 700; color: var(--ink); }
-.table .t-price { font-size: clamp(9px, 1.5vw, 12px); font-weight: 700; color: var(--gold-deep); }
-.table .t-label { font-size: clamp(8px, 1.2vw, 10px); color: var(--ink-soft); }
+.table .t-free  { font-size: clamp(8px, 1.3vw, 11px); font-weight: 700; color: var(--ink-soft); }
+.table .t-count { font-size: clamp(12px, 2.2vw, 17px); font-weight: 900; color: var(--ink); }
+.table .t-price { font-size: clamp(8px, 1.2vw, 10px); font-weight: 700; color: var(--gold-deep); }
 
-.table.free:hover { transform: translate(-50%, -50%) scale(1.06); box-shadow: 0 6px 16px rgba(58,38,22,.25); background:#fffdf6; }
-.table.free:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+.table.has-free:hover { transform: translate(-50%, -50%) scale(1.06); box-shadow: 0 6px 16px rgba(58,38,22,.25); background:#fffdf6; }
+.table.has-free:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
 
-.table.pending {
-  background: var(--gray);
-  border-color: #8a7d63;
+.table.full {
+  background: #efe7d6;
+  border-color: #9c8f74;
   cursor: not-allowed;
 }
-.table.pending .t-price, .table.pending .t-seats { color: #4a3f2c; }
+.table.full .t-count { color: var(--barn); }
 
-.table.confirmed {
-  background: var(--barn);
-  border-color: var(--barn-deep);
-  cursor: not-allowed;
-  color: #fff;
+/* места-индикаторы вокруг стола */
+.seat-dot {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  border-radius: 3px;
+  border: 1.5px solid var(--ink);
+  background: var(--cream-2);
+  z-index: 1;
+  pointer-events: none;
+  box-sizing: border-box;
 }
-.table.confirmed .t-seats, .table.confirmed .t-price, .table.confirmed .t-label { color: #fdeceb; }
-
-.table.disabled { display: none; }
+.seat-dot.free      { background: #fbf6ea; }
+.seat-dot.pending   { background: var(--gray);  border-color: #8a7d63; }
+.seat-dot.confirmed { background: var(--barn);  border-color: var(--barn-deep); }
 
 /* ---------- Модальное окно ---------- */
 .modal-backdrop {
@@ -263,6 +269,94 @@ a { color: var(--gold-deep); }
   margin-bottom: 16px;
   font-weight: 700;
 }
+
+/* ----- карта мест в модалке ----- */
+.seatmap { display: flex; justify-content: center; margin: 4px 0 12px; }
+.seatmap-ring {
+  position: relative;
+  width: 230px;
+  height: 230px;
+  max-width: 70vw;
+  max-height: 70vw;
+}
+.seatmap-center {
+  position: absolute;
+  left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  width: 46%; height: 46%;
+  display: flex; align-items: center; justify-content: center;
+  text-align: center;
+  border: 2px solid var(--ink);
+  background: var(--cream-2);
+  font-family: 'Bitter', serif;
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--ink);
+  padding: 4px;
+}
+.seatmap-center.circle { border-radius: 50%; }
+.seatmap-center.square { border-radius: 10px; }
+
+.seat {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 34px; height: 34px;
+  border-radius: 8px;
+  border: 2px solid var(--ink);
+  background: #fbf6ea;
+  color: var(--ink);
+  font-weight: 700;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: transform .1s ease, background .12s ease;
+  padding: 0;
+}
+.seat:hover:not(:disabled) { transform: translate(-50%, -50%) scale(1.1); background: #fffdf6; }
+.seat.picked {
+  background: var(--gold);
+  border-color: var(--gold-deep);
+  color: var(--ink);
+  transform: translate(-50%, -50%) scale(1.08);
+}
+.seat.pending {
+  background: var(--gray);
+  border-color: #8a7d63;
+  color: #4a3f2c;
+  cursor: not-allowed;
+}
+.seat.confirmed {
+  background: var(--barn);
+  border-color: var(--barn-deep);
+  color: #fff;
+  cursor: not-allowed;
+}
+
+.seat-legend {
+  display: flex; flex-wrap: wrap; justify-content: center;
+  gap: 6px 14px; font-size: 12.5px; font-weight: 700; color: var(--ink-soft);
+  margin-bottom: 12px;
+}
+.seat-legend i {
+  width: 14px; height: 14px; border-radius: 4px; display: inline-block;
+  vertical-align: -2px; margin-right: 5px; border: 1.5px solid var(--ink);
+}
+.sl-free { background: #fbf6ea; }
+.sl-picked { background: var(--gold); border-color: var(--gold-deep); }
+.sl-pending { background: var(--gray); border-color: #8a7d63; }
+.sl-confirmed { background: var(--barn); border-color: var(--barn-deep); }
+
+.seat-summary {
+  background: var(--cream);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  text-align: center;
+  font-weight: 700;
+}
+.seat-summary b { color: var(--gold-deep); }
 label.field { display: block; margin-bottom: 12px; font-weight: 700; font-size: 14px; }
 label.field span { display: block; margin-bottom: 4px; }
 .field input {
@@ -417,9 +511,10 @@ table.grid th { font-family: 'Bitter', serif; color: var(--ink-soft); }
   .hall-frame { padding: 8px; }
   .hero { padding: 22px 0 6px; }
 
-  /* столы: убираем подпись «Стол N», оставляем главное — мест и цену */
-  .table .t-label { display: none; }
-  .table .t-seats, .table .t-price { font-size: 11px; }
+  /* столы: компактнее на телефоне */
+  .table .t-price { display: none; }
+  .table .t-count { font-size: 14px; }
+  .table .t-free { font-size: 9px; }
   .decor.column { font-size: 10px; }
 
   /* модалка занимает почти всю ширину */
@@ -435,6 +530,7 @@ table.grid th { font-family: 'Bitter', serif; color: var(--ink-soft); }
 }
 
 @media (max-width: 380px) {
-  .table .t-seats, .table .t-price { font-size: 10px; }
+  .table .t-count { font-size: 13px; }
+  .table .t-free { font-size: 8px; }
   .decor.stage { font-size: 13px; }
 }

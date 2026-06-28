@@ -10,10 +10,6 @@ const mysql = require('mysql2/promise');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ----------------------------------------------------------------------------
-//  Пароль администратора. Токен стабилен между перезапусками (важно, т.к. на
-//  Railway приложение «засыпает» и перезапускается — токен не должен слетать).
-// ----------------------------------------------------------------------------
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'piraty2019';
 const ADMIN_TOKEN = crypto
   .createHash('sha256')
@@ -24,10 +20,9 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ----------------------------------------------------------------------------
-//  Подключение к MySQL. Поддерживаются и MYSQL_URL (Railway), и отдельные
-//  переменные окружения.
-// ----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+//  MySQL
+// ---------------------------------------------------------------------------
 function buildDbConfig() {
   const url = process.env.MYSQL_URL || process.env.DATABASE_URL;
   if (url) {
@@ -54,22 +49,18 @@ const pool = mysql.createPool({
   waitForConnections: true,
   connectionLimit: 5,
   queueLimit: 0,
-  // ВАЖНО для Railway Serverless: НЕ держим соединения «живыми» — иначе
-  // постоянный исходящий трафик к БД не даст сервису уснуть. Закрываем
-  // простаивающие соединения, чтобы при отсутствии посетителей трафик пропал
-  // и Railway усыпил приложение.
   enableKeepAlive: false,
-  idleTimeout: 60000, // закрыть простаивающее соединение через 60 c
+  idleTimeout: 60000,
   maxIdle: 1,
   charset: 'utf8mb4',
 });
 
-// ----------------------------------------------------------------------------
-//  Стартовые столы — расставлены точь-в-точь по схеме зала (координаты в %
-//  от ширины/высоты плана; x;y — это центр стола).
-// ----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+//  Стартовая расстановка столов.
+//  ВАЖНО: price теперь — цена ЗА ОДНО МЕСТО, seats — количество мест у стола.
+// ---------------------------------------------------------------------------
 const SEED_TABLES = [
-  // label,        seats, price, shape,    x,    y,    size
+  // label,    seats, price(за место), shape,   x,    y,    size
   ['Стол 1',  3, 500, 'circle', 21.6, 8.7,  12.0],
   ['Стол 2',  3, 400, 'circle', 7.3,  15.0, 12.0],
   ['Стол 3',  3, 500, 'circle', 28.7, 18.7, 12.0],
@@ -84,6 +75,15 @@ const SEED_TABLES = [
   ['Стол 12', 6, 400, 'circle', 58.2, 79.9, 13.5],
   ['Стол 13', 6, 400, 'circle', 52.3, 90.9, 13.5],
 ];
+
+async function columnExists(table, column) {
+  const [r] = await pool.query(
+    `SELECT COUNT(*) AS c FROM information_schema.columns
+      WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?`,
+    [table, column]
+  );
+  return r[0].c > 0;
+}
 
 async function initDb() {
   await pool.query(`
@@ -112,34 +112,49 @@ async function initDb() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
   `);
 
+  // Бронь (заявка). Места хранятся в booking_seats.
   await pool.query(`
     CREATE TABLE IF NOT EXISTS bookings (
       id INT PRIMARY KEY AUTO_INCREMENT,
-      table_id INT NOT NULL,
       first_name VARCHAR(100) NOT NULL,
       last_name  VARCHAR(100) NOT NULL,
       phone      VARCHAR(20)  NOT NULL,
       note       VARCHAR(500) NULL,
+      total_price INT NOT NULL DEFAULT 0,
       status ENUM('pending','confirmed','cancelled') NOT NULL DEFAULT 'pending',
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      INDEX idx_table (table_id),
-      INDEX idx_status (status),
+      INDEX idx_status (status)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+
+  // Миграции для уже существующей базы (с прошлой версии)
+  if (!(await columnExists('bookings', 'note'))) {
+    await pool.query(`ALTER TABLE bookings ADD COLUMN note VARCHAR(500) NULL`);
+  }
+  if (!(await columnExists('bookings', 'total_price'))) {
+    await pool.query(`ALTER TABLE bookings ADD COLUMN total_price INT NOT NULL DEFAULT 0`);
+  }
+  // старое поле table_id больше не обязательно
+  if (await columnExists('bookings', 'table_id')) {
+    try { await pool.query(`ALTER TABLE bookings MODIFY table_id INT NULL`); } catch (e) {}
+  }
+
+  // Места брони
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS booking_seats (
+      id INT PRIMARY KEY AUTO_INCREMENT,
+      booking_id INT NOT NULL,
+      table_id INT NOT NULL,
+      seat_index INT NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_bs_booking (booking_id),
+      INDEX idx_bs_seat (table_id, seat_index),
+      FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE CASCADE,
       FOREIGN KEY (table_id) REFERENCES tables_layout(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
   `);
 
-  // Миграция: добавить колонку note для уже существующих баз
-  // (MySQL 8 не поддерживает ADD COLUMN IF NOT EXISTS, поэтому проверяем вручную)
-  const [noteCol] = await pool.query(
-    `SELECT COUNT(*) AS c FROM information_schema.columns
-      WHERE table_schema = DATABASE() AND table_name = 'bookings' AND column_name = 'note'`
-  );
-  if (noteCol[0].c === 0) {
-    await pool.query(`ALTER TABLE bookings ADD COLUMN note VARCHAR(500) NULL AFTER phone`);
-  }
-
-  // Дефолтная информация о концерте
   const [s] = await pool.query('SELECT COUNT(*) AS c FROM settings');
   if (s[0].c === 0) {
     await pool.query(
@@ -149,12 +164,11 @@ async function initDb() {
         'Концерт ТО «ПИРАТЫ»',
         'Дата уточняется',
         'г. Курск',
-        'Мы плохому не научим! Большой сольный концерт команды КВН «Пираты». Бронируйте столики заранее — мест немного.',
+        'Мы плохому не научим! Большой сольный концерт команды КВН «Пираты». Бронируйте места заранее — их немного.',
       ]
     );
   }
 
-  // Стартовая расстановка столов
   const [t] = await pool.query('SELECT COUNT(*) AS c FROM tables_layout');
   if (t[0].c === 0) {
     let order = 0;
@@ -168,18 +182,18 @@ async function initDb() {
   }
 }
 
-// ----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 //  Хелперы
-// ----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 function normalizePhone(raw) {
   if (!raw) return null;
   let digits = String(raw).replace(/\D/g, '');
   if (digits.length === 11 && (digits[0] === '8' || digits[0] === '7')) {
     digits = '7' + digits.slice(1);
   }
-  if (digits.length === 10) digits = '7' + digits; // ввели без кода страны
+  if (digits.length === 10) digits = '7' + digits;
   if (digits.length !== 11 || digits[0] !== '7') return null;
-  return '+' + digits; // +7XXXXXXXXXX
+  return '+' + digits;
 }
 
 function requireAdmin(req, res, next) {
@@ -190,42 +204,62 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-// Статус стола = активная бронь (confirmed важнее pending)
-async function getTablesWithStatus() {
-  const [tables] = await pool.query(
-    'SELECT * FROM tables_layout ORDER BY sort_order, id'
-  );
-  const [active] = await pool.query(
-    `SELECT table_id, status FROM bookings WHERE status IN ('pending','confirmed')`
+// Карта занятых мест: { table_id: { seat_index: 'pending'|'confirmed' } }
+async function getSeatStatusMap() {
+  const [rows] = await pool.query(
+    `SELECT bs.table_id, bs.seat_index, b.status
+       FROM booking_seats bs
+       JOIN bookings b ON b.id = bs.booking_id
+      WHERE b.status IN ('pending','confirmed')`
   );
   const map = {};
-  for (const b of active) {
-    if (b.status === 'confirmed') map[b.table_id] = 'confirmed';
-    else if (!map[b.table_id]) map[b.table_id] = 'pending';
+  for (const r of rows) {
+    if (!map[r.table_id]) map[r.table_id] = {};
+    // confirmed важнее pending
+    if (r.status === 'confirmed' || !map[r.table_id][r.seat_index]) {
+      map[r.table_id][r.seat_index] = r.status;
+    }
   }
-  return tables.map((t) => ({
-    id: t.id,
-    label: t.label,
-    seats: t.seats,
-    price: t.price,
-    shape: t.shape,
-    x: t.pos_x,
-    y: t.pos_y,
-    size: t.size,
-    is_active: !!t.is_active,
-    status: t.is_active ? map[t.id] || 'free' : 'disabled',
-  }));
+  return map;
 }
 
-// ----------------------------------------------------------------------------
+async function getTablesState() {
+  const [tables] = await pool.query('SELECT * FROM tables_layout ORDER BY sort_order, id');
+  const map = await getSeatStatusMap();
+  return tables.map((t) => {
+    const seatMap = map[t.id] || {};
+    const seats = [];
+    let free = 0;
+    for (let i = 0; i < t.seats; i++) {
+      const st = t.is_active ? seatMap[i] || 'free' : 'disabled';
+      if (st === 'free') free++;
+      seats.push(st);
+    }
+    return {
+      id: t.id,
+      label: t.label,
+      seats_total: t.seats,
+      price: t.price, // за одно место
+      shape: t.shape,
+      x: t.pos_x,
+      y: t.pos_y,
+      size: t.size,
+      is_active: !!t.is_active,
+      seats, // массив статусов по местам
+      free_count: t.is_active ? free : 0,
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
 //  ПУБЛИЧНЫЙ API
-// ----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
 app.get('/api/state', async (req, res) => {
   try {
     const [[concert]] = await pool.query('SELECT * FROM settings WHERE id = 1');
-    const tables = await getTablesWithStatus();
+    const tables = await getTablesState();
     res.json({ concert, tables });
   } catch (e) {
     console.error(e);
@@ -234,77 +268,122 @@ app.get('/api/state', async (req, res) => {
 });
 
 app.post('/api/book', async (req, res) => {
+  let conn;
   try {
-    const { table_id, first_name, last_name, phone, note } = req.body || {};
-    if (!table_id || !first_name || !last_name || !phone) {
-      return res.status(400).json({ error: 'Заполните все поля' });
-    }
-    const fn = String(first_name).trim().slice(0, 100);
-    const ln = String(last_name).trim().slice(0, 100);
+    const { table_id, seats, first_name, last_name, phone, note } = req.body || {};
+    const fn = String(first_name || '').trim().slice(0, 100);
+    const ln = String(last_name || '').trim().slice(0, 100);
     const noteText = note ? String(note).trim().slice(0, 500) : null;
     const normPhone = normalizePhone(phone);
+
+    if (!table_id || !Array.isArray(seats) || seats.length === 0) {
+      return res.status(400).json({ error: 'Выберите хотя бы одно место' });
+    }
     if (!fn || !ln) return res.status(400).json({ error: 'Укажите имя и фамилию' });
     if (!normPhone) {
       return res.status(400).json({ error: 'Неверный номер. Формат: +7 (XXX) XXX-XX-XX' });
     }
 
-    const [[table]] = await pool.query(
-      'SELECT * FROM tables_layout WHERE id = ? AND is_active = 1',
-      [table_id]
-    );
-    if (!table) return res.status(404).json({ error: 'Стол недоступен' });
+    // уникальные целые индексы
+    const wantSeats = [...new Set(seats.map((n) => parseInt(n, 10)))].filter((n) => Number.isInteger(n) && n >= 0);
+    if (wantSeats.length === 0) return res.status(400).json({ error: 'Некорректные места' });
 
-    const [[busy]] = await pool.query(
-      `SELECT COUNT(*) AS c FROM bookings
-       WHERE table_id = ? AND status IN ('pending','confirmed')`,
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+
+    const [[table]] = await conn.query(
+      'SELECT * FROM tables_layout WHERE id = ? AND is_active = 1 FOR UPDATE',
       [table_id]
     );
-    if (busy.c > 0) {
-      return res.status(409).json({ error: 'Этот стол уже занят. Обновите страницу.' });
+    if (!table) {
+      await conn.rollback();
+      return res.status(404).json({ error: 'Стол недоступен' });
+    }
+    if (wantSeats.some((i) => i >= table.seats)) {
+      await conn.rollback();
+      return res.status(400).json({ error: 'Такого места нет за этим столом' });
     }
 
-    await pool.query(
-      `INSERT INTO bookings (table_id, first_name, last_name, phone, note, status)
+    // проверка занятости
+    const [busy] = await conn.query(
+      `SELECT bs.seat_index FROM booking_seats bs
+         JOIN bookings b ON b.id = bs.booking_id
+        WHERE bs.table_id = ? AND b.status IN ('pending','confirmed')
+          AND bs.seat_index IN (?)`,
+      [table_id, wantSeats]
+    );
+    if (busy.length > 0) {
+      await conn.rollback();
+      return res.status(409).json({ error: 'Некоторые места уже заняты. Обновите страницу.' });
+    }
+
+    const total = wantSeats.length * table.price;
+
+    const [r] = await conn.query(
+      `INSERT INTO bookings (first_name, last_name, phone, note, total_price, status)
        VALUES (?, ?, ?, ?, ?, 'pending')`,
-      [table_id, fn, ln, normPhone, noteText]
+      [fn, ln, normPhone, noteText, total]
+    );
+    const bookingId = r.insertId;
+
+    const values = wantSeats.map((i) => [bookingId, table_id, i]);
+    await conn.query(
+      `INSERT INTO booking_seats (booking_id, table_id, seat_index) VALUES ?`,
+      [values]
     );
 
-    res.json({ ok: true, message: 'Заявка отправлена! Стол зарезервирован, ожидайте подтверждения администратора.' });
+    await conn.commit();
+    res.json({
+      ok: true,
+      total,
+      message: `Заявка отправлена! Забронировано мест: ${wantSeats.length} на сумму ${total} ₽. Ожидайте подтверждения администратора.`,
+    });
   } catch (e) {
+    if (conn) { try { await conn.rollback(); } catch (_) {} }
     console.error(e);
     res.status(500).json({ error: 'Ошибка сервера' });
+  } finally {
+    if (conn) conn.release();
   }
 });
 
-// ----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 //  АДМИН API
-// ----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 app.post('/api/admin/login', (req, res) => {
   const { password } = req.body || {};
-  if (password === ADMIN_PASSWORD) {
-    return res.json({ ok: true, token: ADMIN_TOKEN });
-  }
+  if (password === ADMIN_PASSWORD) return res.json({ ok: true, token: ADMIN_TOKEN });
   res.status(401).json({ error: 'Неверный пароль' });
 });
 
-// Все заявки
 app.get('/api/admin/bookings', requireAdmin, async (req, res) => {
   try {
-    const [rows] = await pool.query(
-      `SELECT b.id, b.table_id, b.first_name, b.last_name, b.phone, b.note, b.status,
-              b.created_at, t.label, t.seats, t.price
-         FROM bookings b
-         JOIN tables_layout t ON t.id = b.table_id
-        ORDER BY b.created_at DESC`
+    const [bookings] = await pool.query(
+      `SELECT id, first_name, last_name, phone, note, total_price, status, created_at
+         FROM bookings ORDER BY created_at DESC`
     );
-    res.json({ bookings: rows });
+    if (bookings.length) {
+      const ids = bookings.map((b) => b.id);
+      const [seats] = await pool.query(
+        `SELECT bs.booking_id, bs.table_id, bs.seat_index, t.label
+           FROM booking_seats bs JOIN tables_layout t ON t.id = bs.table_id
+          WHERE bs.booking_id IN (?)
+          ORDER BY t.label, bs.seat_index`,
+        [ids]
+      );
+      const byBooking = {};
+      for (const s of seats) {
+        (byBooking[s.booking_id] = byBooking[s.booking_id] || []).push(s);
+      }
+      for (const b of bookings) b.seats = byBooking[b.id] || [];
+    }
+    res.json({ bookings });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
 
-// Подтвердить / отменить / удалить заявку
 app.post('/api/admin/bookings/:id/:action', requireAdmin, async (req, res) => {
   try {
     const { id, action } = req.params;
@@ -324,7 +403,6 @@ app.post('/api/admin/bookings/:id/:action', requireAdmin, async (req, res) => {
   }
 });
 
-// Информация о концерте
 app.put('/api/admin/concert', requireAdmin, async (req, res) => {
   try {
     const { concert_title, concert_date, concert_place, concert_description } = req.body || {};
@@ -339,10 +417,9 @@ app.put('/api/admin/concert', requireAdmin, async (req, res) => {
   }
 });
 
-// Список столов (для редактора схемы)
 app.get('/api/admin/tables', requireAdmin, async (req, res) => {
   try {
-    const tables = await getTablesWithStatus();
+    const tables = await getTablesState();
     res.json({ tables });
   } catch (e) {
     console.error(e);
@@ -350,7 +427,6 @@ app.get('/api/admin/tables', requireAdmin, async (req, res) => {
   }
 });
 
-// Создать стол
 app.post('/api/admin/tables', requireAdmin, async (req, res) => {
   try {
     const { label, seats, price, shape, x, y, size } = req.body || {};
@@ -375,7 +451,6 @@ app.post('/api/admin/tables', requireAdmin, async (req, res) => {
   }
 });
 
-// Обновить стол
 app.put('/api/admin/tables/:id', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
@@ -403,16 +478,13 @@ app.put('/api/admin/tables/:id', requireAdmin, async (req, res) => {
   }
 });
 
-// Массовое сохранение позиций (drag&drop в редакторе)
 app.put('/api/admin/tables-positions', requireAdmin, async (req, res) => {
   try {
     const { positions } = req.body || {};
     if (!Array.isArray(positions)) return res.status(400).json({ error: 'Нет данных' });
     for (const p of positions) {
       await pool.query('UPDATE tables_layout SET pos_x=?, pos_y=? WHERE id=?', [
-        Number(p.x),
-        Number(p.y),
-        p.id,
+        Number(p.x), Number(p.y), p.id,
       ]);
     }
     res.json({ ok: true });
@@ -422,7 +494,6 @@ app.put('/api/admin/tables-positions', requireAdmin, async (req, res) => {
   }
 });
 
-// Удалить стол
 app.delete('/api/admin/tables/:id', requireAdmin, async (req, res) => {
   try {
     await pool.query('DELETE FROM tables_layout WHERE id=?', [req.params.id]);
@@ -433,15 +504,9 @@ app.delete('/api/admin/tables/:id', requireAdmin, async (req, res) => {
   }
 });
 
-// ----------------------------------------------------------------------------
-//  Старт
-// ----------------------------------------------------------------------------
 initDb()
-  .then(() => {
-    app.listen(PORT, () => console.log(`ПИРАТЫ booking запущен на :${PORT}`));
-  })
+  .then(() => app.listen(PORT, () => console.log(`ПИРАТЫ booking запущен на :${PORT}`)))
   .catch((err) => {
     console.error('Не удалось инициализировать БД:', err);
-    // Поднимаем сервер всё равно, чтобы отдать health и не падать в цикл
     app.listen(PORT, () => console.log(`Запущен без БД на :${PORT}`));
   });

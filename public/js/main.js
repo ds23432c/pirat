@@ -4,13 +4,16 @@ const hall = document.getElementById('hall');
 const modal = document.getElementById('modal');
 const formMsg = document.getElementById('formMsg');
 const toast = document.getElementById('toast');
+const seatMap = document.getElementById('seatMap');
 
 const fName = document.getElementById('fName');
 const fLast = document.getElementById('fLast');
 const fPhone = document.getElementById('fPhone');
 
-let selectedTable = null;
-let tablesCache = [];
+const AR = 684 / 801; // соотношение сторон плана (ширина/высота)
+
+let selectedTable = null;   // объект стола
+let pickedSeats = new Set(); // выбранные индексы мест
 
 // ---------- Загрузка состояния ----------
 async function loadState() {
@@ -30,57 +33,85 @@ function renderConcert(c) {
   document.getElementById('cDate').textContent = c.concert_date || 'Дата уточняется';
   document.getElementById('cPlace').textContent = c.concert_place || '';
   document.getElementById('cDesc').textContent = c.concert_description || '';
-  document.title = (c.concert_title || 'ТО «ПИРАТЫ»') + ' — бронирование столов';
+  document.title = (c.concert_title || 'ТО «ПИРАТЫ»') + ' — бронирование мест';
+}
+
+// позиции мест по кругу вокруг стола (с поправкой на соотношение сторон)
+function seatOffsets(n, sizePct) {
+  const ring = (sizePct / 2) * 1.42; // радиус кольца мест в % ширины
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const a = (-90 + i * (360 / n)) * (Math.PI / 180);
+    out.push({
+      dx: ring * Math.cos(a),          // % ширины
+      dy: ring * Math.sin(a) / AR,     // % высоты (поправка)
+    });
+  }
+  return out;
 }
 
 function renderTables(tables) {
-  tablesCache = tables;
-  // удаляем старые столы (декор оставляем)
-  hall.querySelectorAll('.table').forEach((el) => el.remove());
+  hall.querySelectorAll('.table, .seat-dot').forEach((el) => el.remove());
 
   for (const t of tables) {
-    if (t.status === 'disabled') continue;
+    if (!t.is_active) continue;
+
+    // сам стол
     const el = document.createElement('div');
-    el.className = `table ${t.shape} ${t.status}`;
+    const tableState = t.free_count > 0 ? 'has-free' : 'full';
+    el.className = `table ${t.shape} ${tableState}`;
     el.style.left = t.x + '%';
     el.style.top = t.y + '%';
     el.style.width = t.size + '%';
-    // высота квадрата = ширине; круг тоже квадратный бокс
     el.style.aspectRatio = '1 / 1';
     el.dataset.id = t.id;
-
     el.innerHTML = `
-      <span class="t-seats">${t.seats} чел.</span>
-      <span class="t-price">${t.price}₽</span>
-      <span class="t-label">${escapeHtml(t.label)}</span>
+      <span class="t-free">${t.free_count > 0 ? 'Свободно' : 'Занято'}</span>
+      <span class="t-count">${t.free_count}/${t.seats_total}</span>
+      <span class="t-price">${t.price}₽/место</span>
     `;
-
-    if (t.status === 'free') {
+    if (t.free_count > 0) {
       el.tabIndex = 0;
       el.setAttribute('role', 'button');
-      el.setAttribute('aria-label', `${t.label}, ${t.seats} человек, ${t.price} рублей — забронировать`);
+      el.setAttribute('aria-label', `${t.label}: свободно ${t.free_count} из ${t.seats_total} мест, ${t.price} рублей за место`);
       el.addEventListener('click', () => openModal(t));
       el.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openModal(t); }
       });
     } else {
-      el.title = t.status === 'pending' ? 'Бронь на подтверждении' : 'Стол уже забронирован';
+      el.title = 'Все места заняты';
     }
     hall.appendChild(el);
+
+    // места-индикаторы вокруг стола
+    const offs = seatOffsets(t.seats_total, t.size);
+    const seatSize = Math.max(2.0, t.size * 0.26); // % ширины
+    for (let i = 0; i < t.seats_total; i++) {
+      const dot = document.createElement('div');
+      dot.className = `seat-dot ${t.seats[i]}`;
+      dot.style.left = (t.x + offs[i].dx) + '%';
+      dot.style.top = (t.y + offs[i].dy) + '%';
+      dot.style.width = seatSize + '%';
+      dot.style.aspectRatio = '1 / 1';
+      hall.appendChild(dot);
+    }
   }
 }
 
-// ---------- Модальное окно ----------
+// ---------- Модальное окно с выбором мест ----------
 function openModal(table) {
   selectedTable = table;
+  pickedSeats = new Set();
   document.getElementById('mTableInfo').textContent =
-    `${table.label} · до ${table.seats} человек · ${table.price} ₽`;
+    `${table.label} · ${table.price} ₽ за место · свободно ${table.free_count} из ${table.seats_total}`;
   formMsg.textContent = '';
   formMsg.className = 'form-msg';
   fName.value = '';
   fLast.value = '';
   fPhone.value = '+7 ';
   document.getElementById('fNote').value = '';
+  buildSeatMap(table);
+  updateSummary();
   modal.classList.add('open');
   setTimeout(() => fName.focus(), 50);
 }
@@ -88,55 +119,97 @@ function openModal(table) {
 function closeModal() {
   modal.classList.remove('open');
   selectedTable = null;
+  pickedSeats.clear();
+}
+
+// карта мест внутри модалки (кольцо мест вокруг названия стола)
+function buildSeatMap(table) {
+  seatMap.innerHTML = '';
+  const n = table.seats_total;
+  const box = document.createElement('div');
+  box.className = 'seatmap-ring';
+  // центр
+  const center = document.createElement('div');
+  center.className = 'seatmap-center ' + table.shape;
+  center.textContent = table.label;
+  box.appendChild(center);
+
+  const R = 42; // % от размера контейнера
+  for (let i = 0; i < n; i++) {
+    const a = (-90 + i * (360 / n)) * (Math.PI / 180);
+    const x = 50 + R * Math.cos(a);
+    const y = 50 + R * Math.sin(a);
+    const seat = document.createElement('button');
+    seat.type = 'button';
+    const st = table.seats[i];
+    seat.className = 'seat ' + st;
+    seat.style.left = x + '%';
+    seat.style.top = y + '%';
+    seat.textContent = i + 1;
+    if (st === 'free') {
+      seat.addEventListener('click', () => toggleSeat(i, seat));
+    } else {
+      seat.disabled = true;
+      seat.title = st === 'pending' ? 'Место на брони' : 'Место занято';
+    }
+    box.appendChild(seat);
+  }
+  seatMap.appendChild(box);
+}
+
+function toggleSeat(i, el) {
+  if (pickedSeats.has(i)) { pickedSeats.delete(i); el.classList.remove('picked'); }
+  else { pickedSeats.add(i); el.classList.add('picked'); }
+  updateSummary();
+}
+
+function updateSummary() {
+  const count = pickedSeats.size;
+  const total = count * (selectedTable ? selectedTable.price : 0);
+  document.getElementById('sumCount').textContent = count;
+  document.getElementById('sumTotal').textContent = total + ' ₽';
 }
 
 document.getElementById('btnCancel').addEventListener('click', closeModal);
 modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
 
-// ---------- Маска и проверка телефона +7 ----------
-// Разделители ") " и "-" дописываются только когда за ними реально есть
-// цифры. Иначе при удалении они тут же добавлялись обратно и «блокировали»
-// стирание у чёрточек.
+// ---------- Маска телефона +7 ----------
 fPhone.addEventListener('input', () => {
   let digits = fPhone.value.replace(/\D/g, '');
   if (digits) {
     if (digits[0] === '8') digits = '7' + digits.slice(1);
     if (digits[0] !== '7') digits = '7' + digits;
-    digits = digits.slice(0, 11); // 7 + 10 цифр
+    digits = digits.slice(0, 11);
   }
-
   let out = '';
   if (digits) {
-    const r = digits.slice(1); // до 10 цифр номера
+    const r = digits.slice(1);
     out = '+7';
     if (r.length >= 1) out += ' (' + r.slice(0, 3);
     if (r.length >= 4) out += ') ' + r.slice(3, 6);
     if (r.length >= 7) out += '-' + r.slice(6, 8);
     if (r.length >= 9) out += '-' + r.slice(8, 10);
   }
-
   fPhone.value = out;
   const r = digits.slice(1);
   fPhone.classList.toggle('invalid', r.length > 0 && r.length < 10);
 });
 
-function getPhoneDigits() {
-  return fPhone.value.replace(/\D/g, '');
-}
+function getPhoneDigits() { return fPhone.value.replace(/\D/g, ''); }
 
-// ---------- Отправка брони ----------
+// ---------- Отправка ----------
 document.getElementById('btnSubmit').addEventListener('click', submitBooking);
 
 async function submitBooking() {
   if (!selectedTable) return;
+  if (pickedSeats.size === 0) return showFormError('Выберите хотя бы одно место');
+
   const first = fName.value.trim();
   const last = fLast.value.trim();
-  const digits = getPhoneDigits(); // должно быть 7XXXXXXXXXX
+  const digits = getPhoneDigits();
 
-  if (!first || !last) {
-    return showFormError('Укажите имя и фамилию');
-  }
+  if (!first || !last) return showFormError('Укажите имя и фамилию');
   if (digits.length !== 11 || digits[0] !== '7') {
     fPhone.classList.add('invalid');
     return showFormError('Введите корректный номер: +7 (XXX) XXX-XX-XX');
@@ -145,13 +218,13 @@ async function submitBooking() {
   const btn = document.getElementById('btnSubmit');
   btn.disabled = true;
   btn.textContent = 'Отправляем…';
-
   try {
     const res = await fetch('/api/book', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         table_id: selectedTable.id,
+        seats: [...pickedSeats],
         first_name: first,
         last_name: last,
         phone: '+' + digits,
@@ -161,6 +234,11 @@ async function submitBooking() {
     const data = await res.json();
     if (!res.ok) {
       showFormError(data.error || 'Не удалось забронировать');
+      await loadState(); // обновим занятость, если кто-то успел занять
+      if (selectedTable) {
+        const fresh = (await (await fetch('/api/state')).json()).tables.find((t) => t.id === selectedTable.id);
+        if (fresh) { selectedTable = fresh; pickedSeats.clear(); buildSeatMap(fresh); updateSummary(); }
+      }
     } else {
       closeModal();
       showToast(data.message || 'Заявка отправлена!');
@@ -181,14 +259,9 @@ function showFormError(msg) {
 function showToast(msg) {
   toast.textContent = msg;
   toast.classList.add('show');
-  setTimeout(() => toast.classList.remove('show'), 5000);
-}
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (c) =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])
-  );
+  setTimeout(() => toast.classList.remove('show'), 6000);
 }
 
-// ---------- Старт + автообновление статусов ----------
+// ---------- Старт + автообновление ----------
 loadState();
-setInterval(loadState, 12000); // подтянет «серый»→«красный», когда админ подтвердит
+setInterval(() => { if (!modal.classList.contains('open')) loadState(); }, 12000);
