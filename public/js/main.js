@@ -10,7 +10,6 @@ const fName = document.getElementById('fName');
 const fLast = document.getElementById('fLast');
 const fPhone = document.getElementById('fPhone');
 
-const AR = 684 / 801; // соотношение сторон плана (ширина/высота)
 
 let selectedTable = null;   // объект стола
 let pickedSeats = new Set(); // выбранные индексы мест
@@ -34,20 +33,6 @@ function renderConcert(c) {
   document.getElementById('cPlace').textContent = c.concert_place || '';
   document.getElementById('cDesc').textContent = c.concert_description || '';
   document.title = (c.concert_title || 'ТО «ПИРАТЫ»') + ' — бронирование мест';
-}
-
-// позиции мест по кругу вокруг стола (с поправкой на соотношение сторон)
-function seatOffsets(n, sizePct) {
-  const ring = (sizePct / 2) * 1.42; // радиус кольца мест в % ширины
-  const out = [];
-  for (let i = 0; i < n; i++) {
-    const a = (-90 + i * (360 / n)) * (Math.PI / 180);
-    out.push({
-      dx: ring * Math.cos(a),          // % ширины
-      dy: ring * Math.sin(a) / AR,     // % высоты (поправка)
-    });
-  }
-  return out;
 }
 
 function renderTables(tables) {
@@ -82,19 +67,6 @@ function renderTables(tables) {
       el.title = 'Все места заняты';
     }
     hall.appendChild(el);
-
-    // места-индикаторы вокруг стола
-    const offs = seatOffsets(t.seats_total, t.size);
-    const seatSize = Math.max(2.0, t.size * 0.26); // % ширины
-    for (let i = 0; i < t.seats_total; i++) {
-      const dot = document.createElement('div');
-      dot.className = `seat-dot ${t.seats[i]}`;
-      dot.style.left = (t.x + offs[i].dx) + '%';
-      dot.style.top = (t.y + offs[i].dy) + '%';
-      dot.style.width = seatSize + '%';
-      dot.style.aspectRatio = '1 / 1';
-      hall.appendChild(dot);
-    }
   }
 }
 
